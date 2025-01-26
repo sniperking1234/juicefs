@@ -20,7 +20,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -47,14 +47,14 @@ Examples:
 $ juicefs profile /mnt/jfs
 
 # Replay an access log
-$ cat /mnt/jfs/.accesslog > /tmp/jfs.alog
+$ cat /mnt/jfs/.accesslog > /tmp/juicefs.accesslog
 # Press Ctrl-C to stop the "cat" command after some time
-$ juicefs profile /tmp/jfs.alog
+$ juicefs profile /tmp/juicefs.accesslog
 
 # Analyze an access log and print the total statistics immediately
-$ juicefs profile /tmp/jfs.alog --interval 0
+$ juicefs profile /tmp/juicefs.accesslog --interval 0
 
-Details: https://juicefs.com/docs/community/operations_profiling`,
+Details: https://juicefs.com/docs/community/fault_diagnosis_and_analysis#profile`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "uid",
@@ -245,15 +245,19 @@ func (p *profiler) fastCounter() {
 	p.printTime <- last
 }
 
+func colorize1(msg string, color int) string {
+	return fmt.Sprintf("%s%dm%s%s", COLOR_SEQ, color, msg, RESET_SEQ)
+}
+
 func printLines(lines []string, colorful bool) {
 	if colorful {
-		fmt.Print("\033[2J\033[1;1H") // clear screen
-		fmt.Printf("\033[92m%s\n\033[0m", lines[0])
-		fmt.Printf("\033[97m%s\n\033[0m", lines[1])
-		fmt.Printf("\033[94m%s\n\033[0m", lines[2])
+		fmt.Print(CLEAR_SCREEM)
+		fmt.Println(colorize1(lines[0], GREEN))
+		fmt.Println(colorize1(lines[1], YELLOW))
+		fmt.Println(colorize1(lines[2], BLUE))
 		if len(lines) > 3 {
 			for _, l := range lines[3:] {
-				fmt.Printf("\033[93m%s\n\033[0m", l)
+				fmt.Println(colorize1(l, BLACK))
 			}
 		}
 	} else {
@@ -346,7 +350,11 @@ func profile(ctx *cli.Context) error {
 		if inode != uint64(meta.RootInode) {
 			logger.Fatalf("Path %s is not a mount point!", logPath)
 		}
-		logPath = path.Join(logPath, ".accesslog")
+		if p := filepath.Join(logPath, ".jfs.accesslog"); utils.Exists(p) {
+			logPath = p
+		} else {
+			logPath = filepath.Join(logPath, ".accesslog")
+		}
 	} else { // log file to be replayed
 		replay = true
 	}

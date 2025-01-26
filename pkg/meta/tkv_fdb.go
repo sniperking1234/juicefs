@@ -20,6 +20,7 @@
 package meta
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 
@@ -52,6 +53,7 @@ func newFdbClient(addr string) (tkvClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open database: %s", err)
 	}
+	// TODO: database options
 	return withPrefix(&fdbClient{db}, append([]byte(u.Query().Get("prefix")), 0xFD)), nil
 }
 
@@ -59,9 +61,13 @@ func (c *fdbClient) name() string {
 	return "fdb"
 }
 
-func (c *fdbClient) txn(f func(kvTxn) error) error {
+func (c *fdbClient) config(key string) interface{} {
+	return nil
+}
+
+func (c *fdbClient) txn(ctx context.Context, f func(*kvTxn) error, retry int) error {
 	_, err := c.client.Transact(func(t fdb.Transaction) (interface{}, error) {
-		e := f(&fdbTxn{t})
+		e := f(&kvTxn{&fdbTxn{t}, retry})
 		return nil, e
 	})
 	return err
@@ -74,6 +80,7 @@ func (c *fdbClient) scan(prefix []byte, handler func(key, value []byte)) error {
 	var done bool
 	for {
 		if _, err := c.client.ReadTransact(func(t fdb.ReadTransaction) (interface{}, error) {
+			// TODO:  t.Options().SetPriorityBatch()
 			snapshot := t.Snapshot()
 			iter := snapshot.GetRange(
 				fdb.KeyRange{Begin: begin, End: end},
@@ -113,7 +120,6 @@ func (c *fdbClient) reset(prefix []byte) error {
 }
 
 func (c *fdbClient) close() error {
-	// c = &fdbClient{}
 	return nil
 }
 
@@ -121,83 +127,56 @@ func (c *fdbClient) shouldRetry(err error) bool {
 	return false
 }
 
+func (c *fdbClient) gc() {}
+
 func (tx *fdbTxn) get(key []byte) []byte {
 	return tx.Get(fdb.Key(key)).MustGet()
 }
 
 func (tx *fdbTxn) gets(keys ...[]byte) [][]byte {
-	ret := make([][]byte, len(keys))
+	fut := make([]fdb.FutureByteSlice, len(keys))
 	for i, key := range keys {
-		val := tx.Get(fdb.Key(key)).MustGet()
-		ret[i] = val
+		fut[i] = tx.Get(fdb.Key(key))
+	}
+	ret := make([][]byte, len(keys))
+	for i, f := range fut {
+		ret[i] = f.MustGet()
 	}
 	return ret
 }
 
-func (tx *fdbTxn) range0(begin, end []byte) *fdb.RangeIterator {
-	return tx.GetRange(
-		fdb.KeyRange{Begin: fdb.Key(begin), End: fdb.Key(end)},
-		fdb.RangeOptions{Mode: fdb.StreamingModeWantAll},
-	).Iterator()
-}
-
-func (tx *fdbTxn) scanRange(begin, end []byte) map[string][]byte {
-	ret := make(map[string][]byte)
-	iter := tx.range0(begin, end)
-	for iter.Advance() {
-		r := iter.MustGet()
-		ret[string(r.Key)] = r.Value
-	}
-	return ret
-}
-
-func (tx *fdbTxn) scanKeys(prefix []byte) [][]byte {
-	ret := make([][]byte, 0)
-	iter := tx.range0(prefix, nextKey(prefix))
-	for iter.Advance() {
-		ret = append(ret, iter.MustGet().Key)
-	}
-	return ret
-}
-
-func (tx *fdbTxn) scanValues(prefix []byte, limit int, filter func(k, v []byte) bool) map[string][]byte {
-	ret := make(map[string][]byte)
-	iter := tx.range0(prefix, nextKey(prefix))
-	for iter.Advance() {
-		r := iter.MustGet()
-		if filter == nil || filter(r.Key, r.Value) {
-			ret[string(r.Key)] = r.Value
-			if limit > 0 {
-				if limit--; limit == 0 {
-					break
-				}
-			}
+func (tx *fdbTxn) scan(begin, end []byte, keysOnly bool, handler func(k, v []byte) bool) {
+	it := tx.GetRange(fdb.KeyRange{Begin: fdb.Key(begin), End: fdb.Key(end)},
+		fdb.RangeOptions{Mode: fdb.StreamingModeWantAll}).Iterator()
+	for it.Advance() {
+		kv := it.MustGet()
+		if !handler(kv.Key, kv.Value) {
+			break
 		}
 	}
-	return ret
 }
 
 func (tx *fdbTxn) exist(prefix []byte) bool {
-	iter := tx.range0(prefix, nextKey(prefix))
-	return iter.Advance()
+	return tx.GetRange(
+		fdb.KeyRange{Begin: fdb.Key(prefix), End: fdb.Key(nextKey(prefix))},
+		fdb.RangeOptions{Mode: fdb.StreamingModeWantAll},
+	).Iterator().Advance()
 }
 
 func (tx *fdbTxn) set(key, value []byte) {
 	tx.Set(fdb.Key(key), value)
 }
 
-func (tx *fdbTxn) append(key []byte, value []byte) []byte {
+func (tx *fdbTxn) append(key []byte, value []byte) {
 	tx.AppendIfFits(fdb.Key(key), fdb.Key(value))
-	return tx.Get(fdb.Key(key)).MustGet()
 }
 
 func (tx *fdbTxn) incrBy(key []byte, value int64) int64 {
 	tx.Add(fdb.Key(key), packCounter(value))
+	// TODO: don't return new value if not needed
 	return parseCounter(tx.Get(fdb.Key(key)).MustGet())
 }
 
-func (tx *fdbTxn) dels(keys ...[]byte) {
-	for _, key := range keys {
-		tx.Clear(fdb.Key(key))
-	}
+func (tx *fdbTxn) delete(key []byte) {
+	tx.Clear(fdb.Key(key))
 }

@@ -15,9 +15,18 @@ on:
       - 'docs/**'
       - '**.md'
   workflow_dispatch:
+    inputs:
+      debug:
+        type: boolean
+        description: "Run the build with tmate debugging enabled"
+        required: false
+        default: false
+  schedule:
+    - cron:  '0 19 * * *'
 
 jobs:
   gateway:
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -56,24 +65,11 @@ jobs:
             file_size: '100M'
             isolation_level: "repeatable read"
 
-    runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres
-        env:
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
+    runs-on: ubuntu-20.04
 
     steps: 
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 1
       
@@ -81,23 +77,17 @@ jobs:
         id: vars
         run: |
           if [ "${{matrix.meta}}" == "fdb" ]; then
-            echo ::set-output name=target::"juicefs.fdb"
+            echo "target=juicefs.fdb" >> $GITHUB_OUTPUT
           else
-            echo ::set-output name=target::"juicefs"
+            echo "target=juicefs" >> $GITHUB_OUTPUT
           fi
 
       - name: Build
+        timeout-minutes: 10
         uses: ./.github/actions/build
         with: 
           target: ${{steps.vars.outputs.target}}
 
-      - uses: actions/cache@v3
-        if: ${{ matrix.meta == 'tikv' || matrix.meta == 'tidb' }}
-        with:
-          path: ~/.tiup
-          key: ${{ runner.os }}-tiup
-          restore-keys: |
-            ${{ runner.os }}-tiup
             
       - name: Start meta
         run: | 
@@ -122,16 +112,7 @@ jobs:
           export MINIO_ROOT_USER=minioadmin
           export MINIO_ROOT_PASSWORD=minioadmin
           ./juicefs format $meta_url $volume --trash-days 0
-          if [[ "$meta_url" == badger* ]]; then
-            ./juicefs gateway $meta_url localhost:8080 --no-usage-report /tmp/access1.log &
-          else
-            ./juicefs gateway $meta_url localhost:8080 --access-log /tmp/access1.log &
-            #./juicefs gateway $meta_url localhost:9000 --access-log /tmp/access1.log &
-            #./juicefs gateway $meta_url localhost:9001 --access-log /tmp/access2.log &
-            #sudo cp .github/workflows/resources/load-balancer.conf /etc/nginx/conf.d/load-balancer.conf
-            #sudo rm /etc/nginx/sites-enabled/default
-            #sudo systemctl restart nginx
-          fi
+          ./juicefs gateway $meta_url localhost:8080 --no-usage-report --access-log /tmp/access1.log &
         
       - name: Sync with multiple process
         shell: bash
@@ -171,7 +152,7 @@ jobs:
           echo time cost is: $time second
           killall juicefs 
           sleep 3
-          ./juicefs mount -d $meta_url $mp
+          ./juicefs mount -d $meta_url $mp --no-usage-report
           diff -ur data/ $mp/data/ 
           echo "diff succeed"
           ./juicefs umount  $mp --force
@@ -199,13 +180,13 @@ jobs:
           wait "${pids[@]}"
           killall juicefs
           sleep 3
-          ./juicefs mount -d $meta_url $mp
+          ./juicefs mount -d $meta_url $mp --no-usage-report
           [ -d "$mp/test/" ] && exit 1 
           ./juicefs umount  $mp --force
         shell: bash
 
       - name: log
-        if: ${{ always() }}
+        if: always()
         shell: bash
         run: | 
           if [ -f ~/.juicefs/juicefs.log ]; then
@@ -213,14 +194,30 @@ jobs:
             grep "<FATAL>:" ~/.juicefs/juicefs.log && exit 1 || true
           fi
 
+      - name: Setup upterm session
+        if: failure() && (github.event.inputs.debug == 'true' || github.run_attempt != 1)
+        timeout-minutes: 1
+        uses: lhotari/action-upterm@v1
+
+  success-all-test:
+    runs-on: ubuntu-latest
+    needs: [gateway]
+    if: always()
+    steps:
+      - uses: technote-space/workflow-conclusion-action@v3
+      - uses: actions/checkout@v3
+
+      - name: Check Failure
+        if: env.WORKFLOW_CONCLUSION == 'failure'
+        run: exit 1
+
       - name: Send Slack Notification
-        if: ${{ failure() }}
+        if: failure() && github.event_name != 'workflow_dispatch'
         uses: juicedata/slack-notify-action@main
         with:
           channel-id: "${{ secrets.SLACK_CHANNEL_ID_FOR_PR_CHECK_NOTIFY }}"
-          slack_bot_token: "${{ secrets.SLACK_BOT_TOKEN }}"  
+          slack_bot_token: "${{ secrets.SLACK_BOT_TOKEN }}"
 
-      - name: Setup upterm session
-        if: ${{ failure() }}
-        timeout-minutes: 1
-        uses: lhotari/action-upterm@v1
+      - name: Success
+        if: success()
+        run: echo "All Done"

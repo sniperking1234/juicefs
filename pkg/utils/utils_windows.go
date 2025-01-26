@@ -17,16 +17,19 @@
 package utils
 
 import (
-	"fmt"
-	"os"
 	"os/exec"
+	"strconv"
+	"syscall"
 
 	"golang.org/x/sys/windows"
 )
 
 func GetFileInode(path string) (uint64, error) {
-	// FIXME support directory
-	fd, err := windows.Open(path, os.O_RDONLY, 0)
+	pathU16, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return 0, err
+	}
+	fd, err := windows.CreateFile(pathU16, windows.GENERIC_READ, windows.FILE_SHARE_READ, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
 	if err != nil {
 		return 0, err
 	}
@@ -43,10 +46,13 @@ func GetKernelVersion() (major, minor int) { return }
 
 func GetDev(fpath string) int { return -1 }
 
-func GetSysInfo() (string, error) {
-	sysInfo, err := exec.Command("systeminfo").Output()
-	if err != nil {
-		return "", fmt.Errorf("Failed to execute command `systeminfo`: %s", err)
-	}
-	return string(sysInfo), nil
+func GetSysInfo() string {
+	sysInfo, _ := exec.Command("systeminfo").Output()
+	return string(sysInfo)
+}
+
+func GetUmask() int { return 0 }
+
+func ErrnoName(err syscall.Errno) string {
+	return strconv.Itoa(int(err))
 }

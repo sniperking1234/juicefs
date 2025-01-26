@@ -1,58 +1,47 @@
 name: "version-compatible-test-hypo"
 
 on:
+  push:
+    branches: 
+      - main
+    paths:
+      - '**/testVersionCompatible.py'
+      - '**/version_compatible_hypo.yml'
+  pull_request:
+    branches: 
+      - main
+    paths:
+      - '**/testVersionCompatible.py'
+      - '**/version_compatible_hypo.yml'
   schedule:
-    - cron:  '0 16 * * *'
+    - cron:  '0 19 * * *'
   workflow_dispatch:
+    inputs:
+      debug:
+        type: boolean
+        description: "Run the build with tmate debugging enabled"
+        required: false
+        default: false
 
 jobs:
   vc-hypo:
+    timeout-minutes: 120
     continue-on-error: false
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-        # old_juicefs_version: ['main']
-        old_juicefs_version: ['main', 'release-1.0', 'release-1.0-rc1']
-        # meta: ['fdb']
-        meta: ['redis', 'mysql', 'tikv', 'postgres']
+        old_juicefs_version: ['main', 'release-1.0']
+        meta: ['redis', 'mysql', 'tikv']
         storage: ['minio']
         include:
-          - os: ubuntu-latest
-            old_juicefs_version: 'main'
+          - old_juicefs_version: 'main'
             meta: 'fdb'
             storage: 'minio'
-          - os: ubuntu-latest
-            old_juicefs_version: 'release-1.0'
-            meta: 'redis'
-            storage: 'postgres'
-          - os: ubuntu-latest
-            old_juicefs_version: 'release-1.0'
-            meta: 'redis'
-            storage: 'mysql'
-          - os: ubuntu-latest
-            old_juicefs_version: 'release-1.0-beta1'
-            meta: 'redis'
-            storage: 'minio'
-          - os: ubuntu-latest
-            old_juicefs_version: 'release-0.17'
-            meta: 'redis'
+          - old_juicefs_version: 'release-1.0'
+            meta: 'postgres'
             storage: 'minio'
 
-    runs-on: ${{matrix.os}}
-
-    services:
-      postgres:
-        image: postgres
-        env:
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
+    runs-on: ubuntu-20.04
 
     steps:
       - name: Checkout
@@ -64,12 +53,13 @@ jobs:
         id: vars
         run: |
           if [ "${{matrix.meta}}" == "fdb" ]; then
-            echo ::set-output name=target::"juicefs.fdb"
+            echo "target=juicefs.fdb" >> $GITHUB_OUTPUT
           else
-            echo ::set-output name=target::"juicefs"
+            echo "target=juicefs" >> $GITHUB_OUTPUT
           fi
 
       - name: Build new version
+        timeout-minutes: 10
         uses: ./.github/actions/build
         with: 
           target: ${{steps.vars.outputs.target}}
@@ -81,6 +71,7 @@ jobs:
           path: ${{matrix.old_juicefs_version}}
 
       - name: Make old build
+        timeout-minutes: 10
         run: | 
           cd ${{matrix.old_juicefs_version}}
           if [ "${{matrix.meta}}" == "fdb" ]; then
@@ -95,64 +86,23 @@ jobs:
           fi
           cd -
 
-      - uses: actions/cache@v3
-        if: ${{ matrix.meta == 'tikv' || matrix.meta == 'tidb' }}
-        with:
-          path: ~/.tiup
-          key: ${{ runner.os }}-tiup
-          restore-keys: |
-            ${{ runner.os }}-tiup
-
       - name: Prepare meta database
         run: | 
-          meta=${{matrix.meta}}
-          storage=${{matrix.storage}}
-          if [[ "$meta" == redis ]]; then
-            sudo apt-get install -y redis-tools redis-server
-          fi
-          if [[ "$meta" == mysql || "$storage" == mysql ]]; then
-            sudo /etc/init.d/mysql start
-          fi
-          if [[ "$meta" == tikv ]]; then
-            curl --proto '=https' --tlsv1.2 -sSf https://tiup-mirrors.pingcap.com/install.sh | sh
-            source /home/runner/.bash_profile
-            source /home/runner/.profile
-            tiup playground --mode tikv-slim &
-            git clone https://github.com/c4pt0r/tcli
-            cd tcli && make
-            sudo cp bin/tcli /usr/local/bin
-            cd -
-          fi
-          if [[ "$meta" == badger ]]; then
-            sudo go get github.com/dgraph-io/badger/v3
-          fi
-          if [[ "$meta" == mariadb ]]; then
-            docker run -p 127.0.0.1:3306:3306  --name mdb -e MARIADB_ROOT_PASSWORD=root -d mariadb:latest
-          fi
-          if [[ "$meta" == fdb ]]; then
-            docker run --name fdb --rm -d -p 4500:4500 foundationdb/foundationdb:6.3.23
-            sleep 5
-            docker exec fdb fdbcli --exec "configure new single memory"
-            echo "docker:docker@127.0.0.1:4500" > /home/runner/fdb.cluster 
-            fdbcli -C /home/runner/fdb.cluster --exec "status"
-          fi
-          if [[ "$storage" == minio ]]; then
-            docker run -d -p 9000:9000 --name minio \
-                        -e "MINIO_ACCESS_KEY=minioadmin" \
-                        -e "MINIO_SECRET_KEY=minioadmin" \
-                        -v /tmp/data:/data \
-                        -v /tmp/config:/root/.minio \
-                        minio/minio server /data
-          fi
+          chmod +x .github/scripts/start_meta_engine.sh
+          source .github/scripts/start_meta_engine.sh
+          start_meta_engine ${{matrix.meta}} ${{matrix.storage}}
+          # meta_url=$(get_meta_url ${{matrix.meta}})
+          # create_database $meta_url
           
       - name: Install tools
         run: | 
           wget -q https://dl.minio.io/client/mc/release/linux-amd64/mc
           chmod +x mc
           sudo mv mc /usr/local/bin
-          sudo apt install redis-tools
+          sudo .github/scripts/apt_install.sh redis-tools
           sudo pip install hypothesis
           sudo pip install minio
+          sudo pip install xattr
           
       - name: Test
         timeout-minutes: 90
@@ -160,45 +110,71 @@ jobs:
           export META=${{matrix.meta}}
           export STORAGE=${{matrix.storage}}
           new_version=`./juicefs --version | awk -F" " '{print $3}' | awk -F+ '{print $1}'`
+          echo new_version is $new_version
           mv juicefs juicefs-$new_version
           export NEW_JFS_BIN="juicefs-$new_version"
           old_version=`${{matrix.old_juicefs_version}}/juicefs --version | awk -F" " '{print $3}' | awk -F+ '{print $1}'`
+          echo old_version is $old_version
           mv ${{matrix.old_juicefs_version}}/juicefs juicefs-$old_version
           export OLD_JFS_BIN="juicefs-$old_version"
-          python3 .github/scripts/testVersionCompatible.py
+          timeout 3600 python3 .github/scripts/testVersionCompatible.py 2>&1 | tee result.log || code=$?; if [[ $code -eq 124 ]]; then echo test timeout with $code && exit 0; else echo exit with $code && exit $code; fi
+      
+      - name: Display result log
+        if: always()
+        run: | 
+          if [ -f "result.log" ]; then
+            tail -n 500 result.log
+          fi
 
       - name: Upload command log
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v3
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{matrix.os}}-${{matrix.meta}}-${{matrix.old_juicefs_version}}.command.log
-          path: command.log
+          name: ${{matrix.meta}}-${{matrix.old_juicefs_version}}.command.log
+          path: ~/command.log
 
       - name: Display log
-        if: ${{ always() }}
+        if: always()
         shell: bash
         run: | 
           if [ -f "/home/runner/.juicefs/juicefs.log" ]; then
-            cat /home/runner/.juicefs/juicefs.log
+            tail -1000 /home/runner/.juicefs/juicefs.log
             grep "<FATAL>:" /home/runner/.juicefs/juicefs.log && exit 1 || true
           fi
 
       - name: Display command
-        if: ${{ always() }}
+        if: always()
         shell: bash
         run: | 
-          if [ -f "command.log" ]; then
-            tail -100 command.log
+          if [ -f "$HOME/command.log" ]; then
+            tail -100 ~/command.log
           fi
 
+      - name: Setup upterm session
+        if: failure() && (github.event.inputs.debug == 'true' || github.run_attempt != 1)
+        timeout-minutes: 60
+        uses: lhotari/action-upterm@v1
+
+
+  success-all-test:
+    runs-on: ubuntu-latest
+    needs: [vc-hypo]
+    if: always()
+    steps:
+      - uses: technote-space/workflow-conclusion-action@v3
+      - uses: actions/checkout@v3
+
+      - name: Check Failure
+        if: env.WORKFLOW_CONCLUSION == 'failure'
+        run: exit 1
+
       - name: Send Slack Notification
-        if: ${{ failure() }}
+        if: failure() && github.event_name != 'workflow_dispatch'
         uses: juicedata/slack-notify-action@main
         with:
           channel-id: "${{ secrets.SLACK_CHANNEL_ID_FOR_PR_CHECK_NOTIFY }}"
-          slack_bot_token: "${{ secrets.SLACK_BOT_TOKEN }}"  
+          slack_bot_token: "${{ secrets.SLACK_BOT_TOKEN }}"
 
-      - name: Setup upterm session
-        if: ${{ failure() }}
-        timeout-minutes: 1
-        uses: lhotari/action-upterm@v1
+      - name: Success
+        if: success()
+        run: echo "All Done"

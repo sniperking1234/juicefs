@@ -1,14 +1,29 @@
 name: "sysbench"
 
 on:
-  schedule:
-    - cron:  '30 20 * * *'
+  push:
+    branches:
+      - 'main'
+      - 'release-**'
+    paths:
+      - '**/sysbench.yml'
+      - '**/sysbench/action.yml'
+  pull_request:
+    branches:
+      - 'main'
+      - 'release-**'
+    paths:
+      - '**/sysbench.yml'
+      - '**/sysbench/action.yml'
   workflow_dispatch:
-
+  schedule:
+    - cron:  '0 17 * * *'
+    
 jobs:
   sysbench:
+    timeout-minutes: 60
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         meta: [ 'sqlite3', 'redis', 'mysql', 'tikv', 'tidb', 'postgres', 'mariadb', 'badger', 'fdb']
         # meta: ['redis']
@@ -19,20 +34,7 @@ jobs:
           - meta: 'redis'
             compress: 'none'
 
-    runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres
-        env:
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
+    runs-on: ubuntu-20.04
   
     steps:
       - name: Checkout
@@ -44,23 +46,16 @@ jobs:
         id: vars
         run: |
           if [ "${{matrix.meta}}" == "fdb" ]; then
-            echo ::set-output name=target::"juicefs.fdb"
+            echo "target=juicefs.fdb" >> $GITHUB_OUTPUT
           else
-            echo ::set-output name=target::"juicefs"
+            echo "target=juicefs" >> $GITHUB_OUTPUT
           fi
 
       - name: Build
+        timeout-minutes: 10
         uses: ./.github/actions/build
         with: 
           target: ${{steps.vars.outputs.target}}
-
-      - uses: actions/cache@v3
-        if: ${{ matrix.meta == 'tikv' || matrix.meta == 'tidb' }}
-        with:
-          path: ~/.tiup
-          key: ${{ runner.os }}-tiup
-          restore-keys: |
-            ${{ runner.os }}-tiup
 
       - name: Prepare meta db
         run: | 
@@ -93,19 +88,21 @@ jobs:
         run: |
           source .github/scripts/start_meta_engine.sh
           meta_url=$(get_meta_url ${{matrix.meta}})
-          sudo ./juicefs mount -d $meta_url /jfs --no-usage-report &
+          sudo ./juicefs mount -d $meta_url /jfs --no-usage-report
 
       - name: Install Sysbench
         run: |
           curl -s https://packagecloud.io/install/repositories/akopytov/sysbench/script.deb.sh | sudo bash
-          sudo apt -y install sysbench
+          sudo .github/scripts/apt_install.sh  sysbench
           sudo pip install mysqlclient
           date +%Y_%m_%d_%H_%M_%S > /tmp/datetime
 
       - name: seq read 1M
         uses: ./.github/actions/sysbench
         with:
-          mysql_password: ${{secrets.MYSQL_PASSWORD_FOR_JUICEDATA}}
+          aws_access_key_id: ${{secrets.CI_COVERAGE_AWS_AK}}
+          aws_access_key_secret: ${{secrets.CI_COVERAGE_AWS_SK}}
+          awk_access_token: ${{secrets.CI_COVERAGE_AWS_TOKEN}}
           file_num: 1000
           file_total_size: '1G'
           file_test_mode: 'seqrd'
@@ -117,7 +114,9 @@ jobs:
       - name: seq write 1M
         uses: ./.github/actions/sysbench
         with:
-          mysql_password: ${{secrets.MYSQL_PASSWORD_FOR_JUICEDATA}}
+          aws_access_key_id: ${{secrets.CI_COVERAGE_AWS_AK}}
+          aws_access_key_secret: ${{secrets.CI_COVERAGE_AWS_SK}}
+          awk_access_token: ${{secrets.CI_COVERAGE_AWS_TOKEN}}
           file_num: 1000
           file_total_size: '1G'
           file_test_mode: 'seqwr'
@@ -129,7 +128,9 @@ jobs:
       - name: seq read 100K
         uses: ./.github/actions/sysbench
         with:
-          mysql_password: ${{secrets.MYSQL_PASSWORD_FOR_JUICEDATA}}
+          aws_access_key_id: ${{secrets.CI_COVERAGE_AWS_AK}}
+          aws_access_key_secret: ${{secrets.CI_COVERAGE_AWS_SK}}
+          awk_access_token: ${{secrets.CI_COVERAGE_AWS_TOKEN}}
           file_num: 10000
           file_total_size: '1G'
           file_test_mode: 'seqrd'
@@ -141,7 +142,9 @@ jobs:
       - name: seq write 100K
         uses: ./.github/actions/sysbench
         with:
-          mysql_password: ${{secrets.MYSQL_PASSWORD_FOR_JUICEDATA}}
+          aws_access_key_id: ${{secrets.CI_COVERAGE_AWS_AK}}
+          aws_access_key_secret: ${{secrets.CI_COVERAGE_AWS_SK}}
+          awk_access_token: ${{secrets.CI_COVERAGE_AWS_TOKEN}}
           file_num: 10000
           file_total_size: '1G'
           file_test_mode: 'seqwr'
@@ -153,7 +156,9 @@ jobs:
       - name: random readwrite 1M
         uses: ./.github/actions/sysbench
         with:
-          mysql_password: ${{secrets.MYSQL_PASSWORD_FOR_JUICEDATA}}
+          aws_access_key_id: ${{secrets.CI_COVERAGE_AWS_AK}}
+          aws_access_key_secret: ${{secrets.CI_COVERAGE_AWS_SK}}
+          awk_access_token: ${{secrets.CI_COVERAGE_AWS_TOKEN}}
           file_num: 1000
           file_total_size: '1G'
           file_test_mode: 'rndrw'
@@ -165,7 +170,9 @@ jobs:
       - name: random readwrite 100K
         uses: ./.github/actions/sysbench
         with:
-          mysql_password: ${{secrets.MYSQL_PASSWORD_FOR_JUICEDATA}}
+          aws_access_key_id: ${{secrets.CI_COVERAGE_AWS_AK}}
+          aws_access_key_secret: ${{secrets.CI_COVERAGE_AWS_SK}}
+          awk_access_token: ${{secrets.CI_COVERAGE_AWS_TOKEN}}
           file_num: 10000
           file_total_size: '1G'
           file_test_mode: 'rndrw'
@@ -175,7 +182,7 @@ jobs:
           compress: ${{matrix.compress}}
 
       - name: Send Slack Notification
-        if: ${{ failure() }}
+        if: failure()
         uses: juicedata/slack-notify-action@main
         with:
           channel-id: "${{ secrets.SLACK_CHANNEL_ID_FOR_PR_CHECK_NOTIFY }}"

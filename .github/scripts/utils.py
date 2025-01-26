@@ -1,4 +1,8 @@
-from curses import meta
+import subprocess
+try:
+    __import__("minio")
+except ImportError:
+    subprocess.check_call(["pip", "install", "minio"])
 import json
 import os
 from posixpath import expanduser
@@ -8,8 +12,8 @@ import sys
 import time
 from minio import Minio
 
-def flush_meta(meta_url):
-    print('start flush meta')
+def flush_meta(meta_url:str):
+    print(f'start flush meta: {meta_url}')
     if meta_url.startswith('sqlite3://'):
         path = meta_url[len('sqlite3://'):]
         if os.path.isfile(path):
@@ -20,17 +24,38 @@ def flush_meta(meta_url):
         if os.path.isdir(path):
             shutil.rmtree(path)
             print(f'remove badger dir {path} succeed')
-    elif meta_url.startswith('redis://'):
-        run_cmd('redis-cli flushall')
-        print(f'flush redis succeed')
+    elif meta_url.startswith('redis://') or meta_url.startswith('tikv://'):
+        default_port = {"redis": 6379, "tikv": 2379}
+        protocol = meta_url.split("://")[0]
+        host_port= meta_url.split("://")[1].split('/')[0]
+        if ':' in host_port:
+            host = host_port.split(':')[0]
+            port = host_port.split(':')[1]
+        else:
+            host = host_port
+            port = default_port[protocol]
+        db = meta_url.split("://")[1].split('/')[1]
+        assert db
+        print(f'flushing {protocol}://{host}:{port}/{db}')
+        if protocol == 'redis':
+            run_cmd(f'redis-cli -h {host} -p {port} -n {db} flushdb')
+        elif protocol == 'tikv':
+            # TODO: should only flush the specified db
+            run_cmd(f'echo "delall --yes" |tcli -pd {host}:{port}')
+        else:
+            raise Exception(f'{protocol} not supported')
+        print(f'flush {protocol}://{host}:{port}/{db} succeed')
     elif meta_url.startswith('mysql://'):
         create_mysql_db(meta_url)
     elif meta_url.startswith('postgres://'): 
         create_postgres_db(meta_url)
-    elif meta_url.startswith('tikv://'):
-        run_cmd('echo "delall --yes" |tcli -pd localhost:2379')
     elif meta_url.startswith('fdb://'):
-        run_cmd('''fdbcli -C /home/runner/fdb.cluster --exec "writemode on ; clearrange '' \xFF"''')
+        # fdb:///home/runner/fdb.cluster?prefix=jfs2
+        prefix = meta_url.split('?prefix=')[1] if '?prefix=' in meta_url else ""
+        cluster_file = meta_url.split('fdb://')[1].split('?')[0]
+        print(f'flushing fdb: cluster_file: {cluster_file}, prefix: {prefix}')
+        run_cmd(f'echo "writemode on; clearrange {prefix} {prefix}\\xff" | fdbcli -C {cluster_file}')
+        print(f'flush fdb succeed')
     else:
         raise Exception(f'{meta_url} not supported')
     print('flush meta succeed')
@@ -51,6 +76,7 @@ def create_mysql_db(meta_url):
     run_cmd(f'mysql -u{user} {password} -h {host} -P {port} -e "drop database if exists {db_name}; create database {db_name};"')
 
 def create_postgres_db(meta_url):
+    os.environ['PGPASSWORD'] = 'postgres'
     db_name = meta_url[8:].split('@')[1].split('/')[1]
     if '?' in db_name:
         db_name = db_name.split('?')[0]
@@ -158,7 +184,7 @@ def mdtest(filesystem, meta_url):
     assert os.path.exists(filesystem+'mdtest')
 
 def run_jfs_cmd( options):
-    options.append('--debug')
+    # options.append('--debug')
     print('run_jfs_cmd:'+' '.join(options))
     with open(os.path.expanduser('~/command.log'), 'a') as f:
         f.write(' '.join(options).replace('/home/runner', '~'))

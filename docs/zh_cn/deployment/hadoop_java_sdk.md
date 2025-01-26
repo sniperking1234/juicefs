@@ -1,13 +1,11 @@
 ---
-sidebar_label: Hadoop 使用 JuiceFS
-sidebar_position: 4
+title: 在 Hadoop 生态使用 JuiceFS
+sidebar_position: 3
 slug: /hadoop_java_sdk
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-
-# 在 Hadoop 生态使用 JuiceFS 存储
 
 JuiceFS 提供与 HDFS 接口[高度兼容](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-common/filesystem/introduction.html)的 Java 客户端，Hadoop 生态中的各种应用都可以在不改变代码的情况下，平滑地使用 JuiceFS 存储数据。
 
@@ -25,7 +23,7 @@ JuiceFS 默认使用本地的「用户／UID」及「用户组／GID」映射，
 
 通过 JuiceFS Java 客户端为 Hadoop 生态提供存储，需要提前创建 JuiceFS 文件系统。部署 Java 客户端时，在配置文件中指定已创建文件系统的元数据引擎地址。
 
-创建文件系统可以参考 [JuiceFS 快速上手指南](../getting-started/README.md)。
+创建文件系统可以参考 [JuiceFS 快速上手指南](../getting-started/installation.md)。
 
 :::note 注意
 如果要在分布式环境中使用 JuiceFS，创建文件系统时，请合理规划要使用的对象存储和数据库，确保它们可以被每个集群节点正常访问。
@@ -35,11 +33,21 @@ JuiceFS 默认使用本地的「用户／UID」及「用户组／GID」映射，
 
 根据计算任务（如 Spark executor）的读写负载，JuiceFS Hadoop Java SDK 可能需要额外使用 4 * [`juicefs.memory-size`](#io-配置) 的堆外内存用来加速读写性能。默认情况下，建议为计算任务至少配置 1.2GB 的堆外内存。
 
+### 5. Java 运行时版本
+
+JuiceFS Hadoop Java SDK 默认使用 JDK 8 编译，如果需要在高版本的 Java 运行时中使用（如 Java 17），需在 JVM 参数中增加以下选项以允许使用反射 API：
+
+```shell
+--add-exports=java.base/sun.nio.ch=ALL-UNNAMED
+```
+
+更多关于以上选项的说明请参考[官方文档](https://docs.oracle.com/en/java/javase/17/migrate/migrating-jdk-8-later-jdk-releases.html#GUID-7BB28E4D-99B3-4078-BDC4-FC24180CE82B)。
+
 ## 安装与编译客户端
 
 ### 安装预编译客户端
 
-请参考[「安装」](../getting-started/installation.md#安装预编译客户端)文档了解如何下载预编译的 JuiceFS Hadoop Java SDK。
+请参考[「安装」](../getting-started/installation.md#install-the-pre-compiled-client)文档了解如何下载预编译的 JuiceFS Hadoop Java SDK。
 
 ### 手动编译客户端
 
@@ -49,10 +57,10 @@ JuiceFS 默认使用本地的「用户／UID」及「用户组／GID」映射，
 
 编译依赖以下工具：
 
-- [Go](https://golang.org/) 1.15+（中国用户建议使用 [Goproxy China 镜像加速](https://github.com/goproxy/goproxy.cn)）
+- [Go](https://golang.org) 1.15+（中国用户建议使用 [Goproxy China 镜像加速](https://github.com/goproxy/goproxy.cn)）
 - JDK 8+
-- [Maven](https://maven.apache.org/) 3.3+（中国用户建议使用[阿里云镜像加速](https://maven.aliyun.com)）
-- git
+- [Maven](https://maven.apache.org) 3.3+（中国用户建议使用[阿里云镜像加速](https://maven.aliyun.com)）
+- Git
 - make
 - GCC 5.4+
 
@@ -66,16 +74,18 @@ git clone https://github.com/juicedata/juicefs.git
 
 进入目录，执行编译：
 
+```shell
+cd juicefs/sdk/java
+make
+```
+
 :::note 注意
-如果使用 Ceph 的 RADOS 作为 JuiceFS 的存储引擎，需要先安装 `librados-dev` 包并且在[编译 `libjfs.so`](https://github.com/juicedata/juicefs/blob/main/sdk/java/libjfs/Makefile#L38-L39) 时加上 `-tags ceph`。
+如果使用 Ceph 的 RADOS 作为 JuiceFS 的存储引擎，需要先安装 `librados-dev` 包。
 :::
 
 ```shell
 cd juicefs/sdk/java
-```
-
-```shell
-make
+make ceph
 ```
 
 编译完成后，可以在 `sdk/java/target` 目录中找到编译好的 `JAR` 文件，包括两个版本：
@@ -87,7 +97,7 @@ make
 
 #### Windows
 
-用于 Windows 环境的客户端需要在 Linux 或 macOS 系统上通过交叉编译的方式获得，编译依赖 [mingw-w64](https://www.mingw-w64.org/)，需要提前安装。
+用于 Windows 环境的客户端需要在 Linux 或 macOS 系统上通过交叉编译的方式获得，编译依赖 [mingw-w64](https://www.mingw-w64.org)，需要提前安装。
 
 与编译面向 Linux 和 macOS 客户端的步骤相同，比如在 Ubuntu 系统上，先安装 `mingw-w64` 包，解决依赖问题：
 
@@ -100,6 +110,7 @@ sudo apt install mingw-w64
 ```shell
 cd juicefs/sdk/java
 ```
+
 ```shell
 make win
 ```
@@ -127,11 +138,14 @@ make win
 
 ### 社区开源组件
 
-| 名称   | 安装路径                             |
-| ----   | ----                                 |
-| Spark  | `${SPARK_HOME}/jars`                 |
-| Presto | `${PRESTO_HOME}/plugin/hive-hadoop2` |
-| Flink  | `${FLINK_HOME}/lib`                  |
+| 名称        | 安装路径                                                                                    |
+|-----------|-----------------------------------------------------------------------------------------|
+| Hadoop    | `${HADOOP_HOME}/share/hadoop/common/lib/`, `${HADOOP_HOME}/share/hadoop/mapreduce/lib/` |
+| Spark     | `${SPARK_HOME}/jars`                                                                    |
+| Presto    | `${PRESTO_HOME}/plugin/hive-hadoop2`                                                    |
+| Trino     | `${TRINO_HOME}/plugin/hive`                                                             |
+| Flink     | `${FLINK_HOME}/lib`                                                                     |
+| StarRocks | `${StarRocks_HOME}/fe/lib/`, `${StarRocks_HOME}/be/lib/hadoop/common/lib`               |
 
 ### 客户端配置参数
 
@@ -147,24 +161,24 @@ make win
 
 #### 缓存配置
 
-| 配置项                          | 默认值    | 描述                                                                                                                                                                                                                                                              |
-|------------------------------|--------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `juicefs.cache-dir`          |        | 设置本地缓存目录，可以指定多个文件夹，用冒号 `:` 分隔，也可以使用通配符（比如 `*` ）。**请预先创建好这些目录，并给予 `0777` 权限，便于多个应用共享缓存数据。**                                                                                                                                                                      |
-| `juicefs.cache-size`         | 0      | 设置本地缓存目录的容量，单位 MiB，默认为 0，即不开启缓存。如果配置了多个缓存目录，该值代表所有缓存目录容量的总和。                                                                                                                                                                                                    |
-| `juicefs.cache-full-block`   | `true` | 是否缓存所有读取的数据块，`false` 表示只缓存随机读的数据块。                                                                                                                                                                                                                              |
-| `juicefs.free-space`         | 0.1    | 本地缓存目录的最小可用空间比例，默认保留 10% 剩余空间。                                                                                                                                                                                                                                  |
-| `juicefs.open-cache`         | 0      | 缓存打开的文件元数据（单位：秒），0 表示关闭                                                                                                                                                                                                                                         |
-| `juicefs.attr-cache`         | 0      | 目录和文件属性缓存的过期时间（单位：秒）                                                                                                                                                                                                                                            |
-| `juicefs.entry-cache`        | 0      | 文件项缓存的过期时间（单位：秒）                                                                                                                                                                                                                                                |
-| `juicefs.dir-entry-cache`    | 0      | 目录项缓存的过期时间（单位：秒）                                                                                                                                                                                                                                                |
-| `juicefs.discover-nodes-url` |        | 指定发现集群节点列表的方式，每 10 分钟刷新一次。<br /><br />YARN：`yarn`<br />Spark Standalone：`http://spark-master:web-ui-port/json/`<br />Spark ThriftServer：`http://thrift-server:4040/api/v1/applications/`<br />Presto：`http://coordinator:discovery-uri-port/v1/service/presto/` |
+| 配置项                          | 默认值    | 描述                                                                                                                                                                                                                                                                                                                                                            |
+|------------------------------|--------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `juicefs.cache-dir`          |        | 设置本地缓存目录，可以指定多个文件夹，用冒号 `:` 分隔，也可以使用通配符（比如 `*` ）。**请预先创建好这些目录，并给予 `0777` 权限，便于多个应用共享缓存数据。**                                                                                                                                                                                                                                                                    |
+| `juicefs.cache-size`         | 0      | 设置本地缓存目录的容量，单位 MiB，默认为 0，即不开启缓存。如果配置了多个缓存目录，该值代表所有缓存目录容量的总和。                                                                                                                                                                                                                                                                                                  |
+| `juicefs.cache-full-block`   | `true` | 是否缓存所有读取的数据块，`false` 表示只缓存随机读的数据块。                                                                                                                                                                                                                                                                                                                            |
+| `juicefs.free-space`         | 0.1    | 本地缓存目录的最小可用空间比例，默认保留 10% 剩余空间。                                                                                                                                                                                                                                                                                                                                |
+| `juicefs.open-cache`         | 0      | 缓存打开的文件元数据（单位：秒），0 表示关闭                                                                                                                                                                                                                                                                                                                                       |
+| `juicefs.attr-cache`         | 0      | 目录和文件属性缓存的过期时间（单位：秒）                                                                                                                                                                                                                                                                                                                                          |
+| `juicefs.entry-cache`        | 0      | 文件项缓存的过期时间（单位：秒）                                                                                                                                                                                                                                                                                                                                              |
+| `juicefs.dir-entry-cache`    | 0      | 目录项缓存的过期时间（单位：秒）                                                                                                                                                                                                                                                                                                                                              |
+| `juicefs.discover-nodes-url` |        | 指定发现集群缓存节点列表的方式，每 10 分钟刷新一次。<br/><br/><ul><li>YARN：`yarn`</li><li>Spark Standalone：`http://spark-master:web-ui-port/json/`</li><li>Spark ThriftServer：`http://thrift-server:4040/api/v1/applications/`</li><li>Presto：`http://coordinator:discovery-uri-port/v1/service/presto/`</li><li>文件系统：`jfs://{VOLUME}/etc/nodes`，需手动建立此文件，并将节点的主机名一条一行写入此文件</li></ul> |
 
 #### I/O 配置
 
 | 配置项                      | 默认值     | 描述                     |
 |--------------------------|---------|------------------------|
 | `juicefs.max-uploads`    | 20      | 上传数据的最大连接数             |
-| `juicefs.max-deletes`    | 2       | 删除数据的最大连接数             |
+| `juicefs.max-deletes`    | 10      | 删除数据的最大连接数             |
 | `juicefs.get-timeout`    | 5       | 下载一个对象的超时时间，单位为秒。      |
 | `juicefs.put-timeout`    | 60      | 上传一个对象的超时时间，单位为秒。      |
 | `juicefs.memory-size`    | 300     | 读写数据的缓冲区最大空间，单位为 MiB。  |
@@ -176,26 +190,30 @@ make win
 
 #### 其它配置
 
-| 配置项                    | 默认值      | 描述                                                                                                                                          |
-|---------------------------|-------------|-----------------------------------------------------------------------------------------------------------------------------------------------|
-| `juicefs.bucket`          |             | 为对象存储指定跟格式化时不同的访问地址                                                                                                        |
-| `juicefs.debug`           | `false`     | 是否开启 debug 日志                                                                                                                           |
-| `juicefs.access-log`      |             | 访问日志的路径。需要所有应用都有写权限，可以配置为 `/tmp/juicefs.access.log`。该文件会自动轮转，保留最近 7 个文件。                           |
-| `juicefs.superuser`       | `hdfs`      | 超级用户                                                                                                                                      |
-| `juicefs.users`           | `null`      | 用户名以及 UID 列表文件的地址，比如 `jfs://name/etc/users`。文件格式为 `<username>:<UID>`，一行一个用户。                                     |
-| `juicefs.groups`          | `null`      | 用户组、GID 以及组成员列表文件的地址，比如 `jfs://name/etc/groups`。文件格式为 `<group-name>:<GID>:<username1>,<username2>`，一行一个用户组。 |
-| `juicefs.umask`           | `null`      | 创建文件和目录的 umask 值（如 `0022`），如果没有此配置，默认值是 `fs.permissions.umask-mode`。                                                |
-| `juicefs.push-gateway`    |             | [Prometheus Pushgateway](https://github.com/prometheus/pushgateway) 地址，格式为 `<host>:<port>`。                                            |
-| `juicefs.push-auth`       |             | [Prometheus 基本认证](https://prometheus.io/docs/guides/basic-auth)信息，格式为 `<username>:<password>`。                                     |
-| `juicefs.push-graphite`   |             | [Graphite](https://graphiteapp.org) 地址，格式为 `<host>:<port>`。                                                                            |
-| `juicefs.push-interval`   | 10          | 指标推送的时间间隔，单位为秒。                                                                                                                |
-| `juicefs.fast-resolve`    | `true`      | 是否开启快速元数据查找（通过 Redis Lua 脚本实现）                                                                                             |
-| `juicefs.no-usage-report` | `false`     | 是否上报数据。仅上版本号等使用量数据，不包含任何用户信息。                                                                                    |
-| `juicefs.block.size`      | `134217728` | 单位为字节，同 HDFS 的 `dfs.blocksize`，默认 128 MB                                                                                           |
-| `juicefs.file.checksum`   | `false`     | DistCp 使用 `-update` 参数时，是否计算文件 Checksum                                                                                           |
-| `juicefs.no-bgjob`        | `false`     | 是否关闭后台任务（清理、备份等）                                                                                                              |
-| `juicefs.backup-meta`     | 3600        | 自动将 JuiceFS 元数据备份到对象存储间隔（单位：秒），设置为 0 关闭自动备份                                                                    |
-| `juicefs.heartbeat`       | 12          | 客户端和元数据引擎之间的心跳间隔（单位：秒），建议所有客户端都设置一样                                                                        |
+| 配置项                       | 默认值          | 描述                                                                                                          |
+|---------------------------|--------------|-------------------------------------------------------------------------------------------------------------|
+| `juicefs.bucket`          |              | 为对象存储指定跟格式化时不同的访问地址                                                                                         |
+| `juicefs.debug`           | `false`      | 是否开启 debug 日志                                                                                               |
+| `juicefs.access-log`      |              | 访问日志的路径。需要所有应用都有写权限，可以配置为 `/tmp/juicefs.access.log`。该文件会自动轮转，保留最近 7 个文件。                                    |
+| `juicefs.superuser`       | `hdfs`       | 超级用户                                                                                                        |
+| `juicefs.supergroup`      | `supergroup` | 超级用户组                                                                                                       |
+| `juicefs.users`           | `null`       | 用户名以及 UID 列表文件的地址，比如 `jfs://name/etc/users`。文件格式为 `<username>:<UID>`，一行一个用户。                                |
+| `juicefs.groups`          | `null`       | 用户组、GID 以及组成员列表文件的地址，比如 `jfs://name/etc/groups`。文件格式为 `<group-name>:<GID>:<username1>,<username2>`，一行一个用户组。 |
+| `juicefs.umask`           | `null`       | 创建文件和目录的 umask 值（如 `0022`），如果没有此配置，默认值是 `fs.permissions.umask-mode`。                                        |
+| `juicefs.push-gateway`    |              | [Prometheus Pushgateway](https://github.com/prometheus/pushgateway) 地址，格式为 `<host>:<port>`。                 |
+| `juicefs.push-auth`       |              | [Prometheus 基本认证](https://prometheus.io/docs/guides/basic-auth)信息，格式为 `<username>:<password>`。              |
+| `juicefs.push-graphite`   |              | [Graphite](https://graphiteapp.org) 地址，格式为 `<host>:<port>`。                                                 |
+| `juicefs.push-interval`   | 10           | 指标推送的时间间隔，单位为秒。                                                                                             |
+| `juicefs.push-labels`     |              | 指标额外标签，格式为 `key1:value1;key2:value2`。                                                                       |
+| `juicefs.fast-resolve`    | `true`       | 是否开启快速元数据查找（通过 Redis Lua 脚本实现）                                                                              |
+| `juicefs.no-usage-report` | `false`      | 是否上报数据。仅上版本号等使用量数据，不包含任何用户信息。                                                                               |
+| `juicefs.block.size`      | `134217728`  | 单位为字节，同 HDFS 的 `dfs.blocksize`，默认 128 MB                                                                    |
+| `juicefs.file.checksum`   | `false`      | DistCp 使用 `-update` 参数时，是否计算文件 Checksum                                                                     |
+| `juicefs.no-bgjob`        | `false`      | 是否关闭后台任务（清理、备份等）                                                                                            |
+| `juicefs.backup-meta`     | 3600         | 自动将 JuiceFS 元数据备份到对象存储间隔（单位：秒），设置为 0 关闭自动备份                                                                 |
+|`juicefs.backup-skip-trash`| `false`      | 备份元数据时忽略回收站中的文件和目录。                                                                                         |
+| `juicefs.heartbeat`       | 12           | 客户端和元数据引擎之间的心跳间隔（单位：秒），建议所有客户端都设置一样                                                                         |
+| `juicefs.skip-dir-mtime`  | 100ms        | 修改父目录 mtime 间隔。                                                                                             |
 
 #### 多文件系统配置
 
@@ -266,6 +284,113 @@ $HADOOP_COMMON_HOME/lib/juicefs-hadoop.jar
 ### Flink
 
 将配置参数加入 `conf/flink-conf.yaml`。如果只是在 Flink 中使用 JuiceFS, 可以不在 Hadoop 环境配置 JuiceFS，只需要配置 Flink 客户端即可。
+
+#### 在阿里云实时平台 Flink SQL 使用 JuiceFS
+
+1. 创建 Maven 项目，根据 Flink 不同版本引入如下依赖
+
+   ```xml
+   <dependencies>
+       <dependency>
+           <groupId>io.juicefs</groupId>
+           <artifactId>juicefs-hadoop</artifactId>
+           <version>{JUICEFS_HADOOP_VERSION}</version>
+       </dependency>
+
+       <!-- for flink-1.13 -->
+       <dependency>
+           <groupId>org.apache.flink</groupId>
+           <artifactId>flink-table-runtime-blink_2.12</artifactId>
+           <version>1.13.5</version>
+           <scope>provided</scope>
+       </dependency>
+
+       <!-- for flink-1.15 -->
+       <dependency>
+           <groupId>org.apache.flink</groupId>
+           <artifactId>flink-table-common</artifactId>
+           <version>1.15.2</version>
+       <scope>provided</scope>
+       </dependency>
+       <dependency>
+           <groupId>org.apache.flink</groupId>
+           <artifactId>flink-connector-files</artifactId>
+           <version>1.15.2</version>
+           <scope>provided</scope>
+       </dependency>
+   </dependencies>
+   ```
+
+2. 创建一个 Java class
+
+   ```java
+   public class JuiceFileSystemTableFactory extends FileSystemTableFactory {
+     @Override
+     public String factoryIdentifier() {
+       return "juicefs";
+     }
+   }
+   ```
+
+3. Flink table connector 是使用 Java’s Service Provider Interfaces (SPI) 加载自定义实现。
+在 resources 按照如下结构创建文件
+
+   ```
+   ## for flink-1.13
+   src/main/resources
+   ├── META-INF
+   │   └── services
+   │        └── org.apache.flink.table.factories.Factory
+   ```
+
+   `org.apache.flink.table.factories.Factory` 文件内容：
+
+   ```
+   {YOUR_PACKAGE}.JuiceFileSystemTableFactory
+   ```
+
+4. 将填写有 JuiceFS 配置的 core-site.xml 放到 src/main/resources 内：
+
+   ```xml
+   <configuration>
+       <property>
+           <name>fs.juicefs.impl</name>
+           <value>io.juicefs.JuiceFileSystem</value>
+       </property>
+       <property>
+           <name>juicefs.meta</name>
+           <value>redis://xxx.redis.rds.aliyuncs.com:6379/0</value>
+       </property>
+       ...
+   </configuration>
+   ```
+
+   :::note 注意
+   由于 `jfs://` scheme 被阿里其他文件系统占用，所以需要配置 `fs.juicefs.impl` 类为 JuiceFS 的实现类，并在后续路径使用 `juicefs://` 协议。
+   :::
+
+5. 打包，确保 JAR 内包含 resources 目录下内容
+6. 通过阿里云实时计算平台控制台->应用->作业开发->connectors 界面上传 JAR 文件
+7. 测试，将如下 SQL 上线运行，可以在 JuiceFS 的 `tmp/tbl` 目录下发现写入内容
+
+   ```sql
+   CREATE TEMPORARY TABLE datagen_source(
+     name VARCHAR
+   ) WITH (
+     'connector' = 'datagen',
+     'number-of-rows' = '100'
+   );
+
+   CREATE TEMPORARY TABLE jfs_sink (name string)
+   with (
+       'connector' = 'juicefs', 'path' = 'juicefs://{VOL_NAME}/tmp/tbl', 'format' = 'csv'
+   );
+
+   INSERT INTO jfs_sink
+   SELECT
+     name
+   from datagen_source;
+   ```
 
 ### Hudi
 
@@ -423,9 +548,7 @@ CREATE TABLE IF NOT EXISTS person
 
 2. 使用以下示例代码验证：
 
-   <Tabs>
-     <TabItem value="java" label="Java">
-
+<!-- autocorrect: false -->
    ```java
    package demo;
 
@@ -449,9 +572,7 @@ CREATE TABLE IF NOT EXISTS person
        }
    }
    ```
-
-     </TabItem>
-   </Tabs>
+<!-- autocorrect: true -->
 
 ## 监控指标收集
 
@@ -471,12 +592,11 @@ Hadoop 默认使用的 Checksum 算法是 MD5-MD5-CRC32, 严重依赖 HDFS 的�
 
 因为该算法依赖于相同的分块大小，需要通过 `juicefs.block.size` 配置将分块大小设置为跟 HDFS 一样（默认值是 `dfs.blocksize`，它的默认值是 128MB）。
 
-另外，HDFS 里支持给每一个文件设置不同的分块大小，而 JuiceFS 不支持，如果启用 Checksum 校验的话会导致拷贝部分文件失败（因为分块大小不同），JuiceFS Hadoop Java SDK 对 DistCp 打了一个热补丁（需要 tools.jar）来跳过这些分块不同的文件（不做比较，而不是抛异常）。
+另外，HDFS 里支持给每一个文件设置不同的分块大小，而 JuiceFS 不支持，如果启用 Checksum 校验的话会导致拷贝部分文件失败（因为分块大小不同），JuiceFS Hadoop Java SDK 对 DistCp 打了一个热补丁（需要 `tools.jar`）来跳过这些分块不同的文件（不做比较，而不是抛异常）。
 
 ## 基准测试
 
 以下提供了一系列方法，使用 JuiceFS 客户端内置的压测工具，对已经成功部署了客户端环境进行性能测试。
-
 
 ### 1. 本地测试
 
@@ -625,7 +745,6 @@ Hadoop 默认使用的 Checksum 算法是 MD5-MD5-CRC32, 严重依赖 HDFS 的�
 
   此命令会启动 10 个 map task，每个 task 读取 10000MB 的数据
 
-
 - **参考值**
 
   | 操作   | 平均吞吐（MB/s） | 总吞吐（MB/s） |
@@ -747,13 +866,61 @@ JuiceFS 可以使用本地磁盘作为缓存加速数据访问，以下数据是
 
 ![parquet](../images/spark_sql_parquet.png)
 
+## 使用 Apache Ranger 进行权限管控
+
+JuiceFS 当前支持对接 Apache Ranger 的 `HDFS` 模块进行路径的权限管控。
+
+### 1. 相关配置
+
+| 配置项                               | 默认值      | 描述                                                                                                                             |
+|-----------------------------------|----------|--------------------------------------------------------------------------------------------------------------------------------|
+| `juicefs.ranger-rest-url`         |          | `ranger`连接地址。不配置该参数即不使用该功能。                                                                                                    |
+| `juicefs.ranger-service-name`     |          | `ranger`中配置的`service name`，必填                                                                                                  |
+| `juicefs.ranger-poll-interval-ms` | `30000`  | `ranger`缓存刷新周期，默认30s                                                                                                           |
+
+### 2. 环境及依赖
+
+考虑到鉴权环境的复杂性，以及依赖冲突的可能性，Ranger 鉴权相关 JAR 包（例如`ranger-plugins-common-2.3.0.jar`,`ranger-plugins-audit-2.3.0.jar`等）及其依赖并未打进 JuiceFS 的 SDK 中。
+
+使用中如果遇到`ClassNotFound`报错，建议单独引入相关目录中（例如`$SPARK_HOME/jars`）
+
+可能需要单独添加的依赖：
+
+```shell
+ranger-plugins-common-2.3.0.jar
+ranger-plugins-audit-2.3.0.jar
+gethostname4j-1.0.0.jar
+jackson-jaxrs-1.9.13.jar
+jersey-client-1.19.jar
+jersey-core-1.19.jar
+jna-5.7.0.jar
+```
+
+### 3. 使用提示
+
+#### 3.1 Ranger版本
+
+当前代码测试基于`Ranger2.3`和`Ranger2.4`版本，因除`HDFS`模块鉴权外并未使用其他特性，理论上其他版本均适用。
+
+#### 3.2 Ranger Audit
+
+当前仅支持鉴权功能，`Ranger Audit`功能已关闭。
+
+#### 3.3 Ranger其他参数
+
+为提升使用效率，当前仅开放连接 Ranger 最核心的参数。
+
+#### 3.4 安全性问题
+
+因项目代码完全开源，无法避免用户通过替换`juicefs.ranger.rest-url`等参数的方式扰乱安全管控。如需更严格的管控，建议自主编译代码，通过将相关安全参数进行加密处理等方式解决。
+
 ## FAQ
 
 ### 1. 出现 `Class io.juicefs.JuiceFileSystem not found` 异常
 
-出现这个异常的原因是 juicefs-hadoop.jar 没有被加载，可以用 `lsof -p {pid} | grep juicefs` 查看 JAR 文件是否被加载。需要检查 JAR 文件是否被正确地放置在各个组件的 classpath 里面，并且保证 JAR 文件有可读权限。
+出现这个异常的原因是 `juicefs-hadoop.jar` 没有被加载，可以用 `lsof -p {pid} | grep juicefs` 查看 JAR 文件是否被加载。需要检查 JAR 文件是否被正确地放置在各个组件的 classpath 里面，并且保证 JAR 文件有可读权限。
 
-另外，在某些发行版 Hadoop 环境中，需要修改 `mapred-site.xml` 中的 `mapreduce.application.classpath` 参数，添加 juicefs-hadoop.jar 的路径。
+另外，在某些发行版 Hadoop 环境中，需要修改 `mapred-site.xml` 中的 `mapreduce.application.classpath` 参数，添加 `juicefs-hadoop.jar` 的路径。
 
 ### 2. 出现 `No FilesSystem for scheme: jfs` 异常
 

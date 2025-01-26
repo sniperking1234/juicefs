@@ -1,7 +1,7 @@
 <p align="center"><a href="https://github.com/juicedata/juicefs"><img alt="JuiceFS Logo" src="docs/zh_cn/images/juicefs-logo-new.svg" width="50%" /></a></p>
 <p align="center">
-    <a href="https://app.travis-ci.com/github/juicedata/juicefs"><img alt="Travis CI Status" src="https://img.shields.io/travis/com/juicedata/juicefs/main?label=Unit%20Testing" /></a>
-    <a href="https://github.com/juicedata/juicefs/actions/workflows/integrationtests.yml"><img alt="GitHub Workflow Status" src="https://img.shields.io/github/workflow/status/juicedata/juicefs/integrationtests?label=Integration%20Testing" /></a>
+    <a href="https://github.com/juicedata/juicefs/actions/workflows/unittests.yml"><img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/juicedata/juicefs/unittests.yml?branch=main&label=Unit%20Testing" /></a>
+    <a href="https://github.com/juicedata/juicefs/actions/workflows/integrationtests.yml"><img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/juicedata/juicefs/integrationtests.yml?branch=main&label=Integration%20Testing" /></a>
     <a href="https://goreportcard.com/report/github.com/juicedata/juicefs"><img alt="Go Report" src="https://goreportcard.com/badge/github.com/juicedata/juicefs" /></a>
     <a href="https://juicefs.com/docs/zh/community/introduction"><img alt="English doc" src="https://img.shields.io/badge/docs-文档中心-brightgreen" /></a>
     <a href="https://go.juicefs.com/slack"><img alt="Join Slack" src="https://badgen.net/badge/Slack/加入%20JuiceFS/0abd59?icon=slack" /></a>
@@ -11,7 +11,7 @@ JuiceFS 是一款高性能 [POSIX](https://en.wikipedia.org/wiki/POSIX) 文件�
 
 JuiceFS 可以简单便捷的将海量云存储直接接入已投入生产环境的大数据、机器学习、人工智能以及各种应用平台，无需修改代码即可像使用本地存储一样高效使用海量云端存储。
 
-📺 **视频**：[什么是 JuiceFS?](https://www.bilibili.com/video/BV1HK4y197va/)
+📺 **视频**：[什么是 JuiceFS?](https://www.bilibili.com/video/BV1HK4y197va)
 
 📖 **文档**：[快速上手指南](https://juicefs.com/docs/zh/community/quick_start_guide)
 
@@ -46,11 +46,11 @@ JuiceFS 由三个部分组成：
 
 JuiceFS 依靠 Redis 来存储文件的元数据。Redis 是基于内存的高性能的键值数据存储，非常适合存储元数据。与此同时，所有数据将通过 JuiceFS 客户端存储到对象存储中。[了解详情](https://juicefs.com/docs/zh/community/architecture)
 
-![JuiceFS Storage Format](docs/zh_cn/images/juicefs-storage-format-new.png)
+![Data structure diagram](docs/en/images/data-structure-diagram.svg)
 
 任何存入 JuiceFS 的文件都会被拆分成固定大小的 **"Chunk"**，默认的容量上限是 64 MiB。每个 Chunk 由一个或多个 **"Slice"** 组成，Slice 的长度不固定，取决于文件写入的方式。每个 Slice 又会被进一步拆分成固定大小的 **"Block"**，默认为 4 MiB。最后，这些 Block 会被存储到对象存储。与此同时，JuiceFS 会将每个文件以及它的 Chunks、Slices、Blocks 等元数据信息存储在元数据引擎中。[了解详情](https://juicefs.com/docs/zh/community/architecture#%E5%A6%82%E4%BD%95%E5%AD%98%E5%82%A8%E6%96%87%E4%BB%B6)
 
-![How JuiceFS stores your files](docs/zh_cn/images/how-juicefs-stores-files-new.png)
+![How JuiceFS stores your files](docs/zh_cn/images/how-juicefs-stores-files.svg)
 
 使用 JuiceFS，文件最终会被拆分成 Chunks、Slices 和 Blocks 存储在对象存储。因此，你会发现在对象存储平台的文件浏览器中找不到存入 JuiceFS 的源文件，存储桶中只有一个 chunks 目录和一堆数字编号的目录和文件。不要惊慌，这正是 JuiceFS 高性能运作的秘诀！
 
@@ -68,6 +68,10 @@ JuiceFS 依靠 Redis 来存储文件的元数据。Redis 是基于内存的高�
 
 请点击 [这里](https://juicefs.com/docs/zh/community/command_reference) 查看所有子命令以及命令行参数。
 
+### 容器
+
+JuiceFS 可以为 Docker、Podman 等容器化技术提供持久化存储，请查阅 [文档](https://juicefs.com/docs/community/juicefs_on_docker) 了解详情。
+
 ### Kubernetes
 
 在 Kubernetes 中使用 JuiceFS 非常便捷，请查看 [这个文档](https://juicefs.com/docs/zh/community/how_to_use_on_kubernetes) 了解更多信息。
@@ -80,7 +84,7 @@ JuiceFS 使用 [Hadoop Java SDK](https://juicefs.com/docs/zh/community/hadoop_ja
 
 - [Redis 最佳实践](https://juicefs.com/docs/zh/community/redis_best_practices)
 - [如何设置对象存储](https://juicefs.com/docs/zh/community/how_to_setup_object_storage)
-- [缓存管理](https://juicefs.com/docs/zh/community/cache_management)
+- [缓存](https://juicefs.com/docs/zh/community/cache)
 - [故障诊断和分析](https://juicefs.com/docs/zh/community/fault_diagnosis_and_analysis)
 - [FUSE 挂载选项](https://juicefs.com/docs/zh/community/fuse_mount_options)
 - [在 Windows 中使用 JuiceFS](https://juicefs.com/docs/zh/community/installation#windows-系统)
@@ -140,16 +144,7 @@ JuiceFS 提供一个性能测试的子命令来帮助你了解它在你的环境
 
 ### 性能分析
 
-在文件系统的根目录有一个叫做 `.accesslog` 的虚拟文件，它提供了所有文件系统操作的细节，以及所消耗的时间，比如：
-
-```bash
-$ cat /jfs/.accesslog
-2021.01.15 08:26:11.003330 [uid:0,gid:0,pid:4403] write (17669,8666,4993160): OK <0.000010>
-2021.01.15 08:26:11.003473 [uid:0,gid:0,pid:4403] write (17675,198,997439): OK <0.000014>
-2021.01.15 08:26:11.003616 [uid:0,gid:0,pid:4403] write (17666,390,951582): OK <0.000006>
-```
-
-每一行的最后一个数字是该操作所消耗的时间，单位是秒。你可以直接利用它来分析各种性能问题，或者尝试 `juicefs profile /jfs` 命令实时监控统计信息。欲进一步了解此子命令请运行 `juicefs profile -h` 或参阅[这里](https://juicefs.com/docs/zh/community/operations_profiling)。
+如遇性能问题，查看[「实时性能监控」](https://juicefs.com/docs/zh/community/fault_diagnosis_and_analysis#performance-monitor)。
 
 ## 支持的对象存储
 
@@ -175,8 +170,6 @@ JuiceFS 的存储格式已经稳定，会被后续发布的所有版本支持。
 
 ## 产品路线图
 
-- 支持使用 FoundationDB 做元数据引擎
-- 基于目录的配额
 - 基于用户和组的配额
 - 快照
 - 一次写入多次读取（WORM）
